@@ -1,0 +1,225 @@
+---
+title: "Course_project"
+output: html_document
+---
+##Info
+
+The scripts have been solely produced, tested and executed on Windows XP SP2 and RStudio Version 0.98.1091.
+
+Developer: Anna Larionova
+
+GitHub repo: https://github.com/LarionovaAnna/datasciencecoursera
+
+
+## Report
+
+In order to reproduce the same results, you need a certain set of packages, as well as setting a pseudo random seed equal to the one I used. 
+*Note:To install, for instance, the caret package in R, run this command: install.packages("caret")
+
+The following Libraries were used for this project, which you should install - if not done yet - and load on your working environment.
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+```
+
+Finally, load the same seed with the following line of code:
+```{r}
+set.seed(12345)
+```
+
+## Getting the data
+
+The training data set can be found on the following URL:
+
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+```
+
+The testing data set can be found on the following URL:
+```{r}
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+Load data to memory
+```{r}
+original_training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+original_testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+##Partioning the training set into two
+
+Partitioning Training data set into two data sets, 60% for myTraining, 40% for myTesting:
+
+```{r}
+inTrain <- createDataPartition(y=original_training$classe, p=0.6, list=FALSE)
+training <- original_training[inTrain, ]; testing <- training[-inTrain, ]
+dim(training); dim(testing)
+```
+
+## Cleaning the data
+
+The following transformations were used to clean the data:
+-cleaning NearZeroVariance Variables
+Run this code to view possible NZV Variables:
+```{r}
+NZVs <- nearZeroVar(training, saveMetrics=TRUE)
+```
+
+Create subset without NZV variables:
+
+```{r}
+NZVvars <- names(training) %in% c("new_window", "kurtosis_roll_belt", "kurtosis_picth_belt",
+"kurtosis_yaw_belt", "skewness_roll_belt", "skewness_roll_belt.1", "skewness_yaw_belt",
+"max_yaw_belt", "min_yaw_belt", "amplitude_yaw_belt", "avg_roll_arm", "stddev_roll_arm",
+"var_roll_arm", "avg_pitch_arm", "stddev_pitch_arm", "var_pitch_arm", "avg_yaw_arm",
+"stddev_yaw_arm", "var_yaw_arm", "kurtosis_roll_arm", "kurtosis_picth_arm",
+"kurtosis_yaw_arm", "skewness_roll_arm", "skewness_pitch_arm", "skewness_yaw_arm",
+"max_roll_arm", "min_roll_arm", "min_pitch_arm", "amplitude_roll_arm", "amplitude_pitch_arm",
+"kurtosis_roll_dumbbell", "kurtosis_picth_dumbbell", "kurtosis_yaw_dumbbell", "skewness_roll_dumbbell",
+"skewness_pitch_dumbbell", "skewness_yaw_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell",
+"amplitude_yaw_dumbbell", "kurtosis_roll_forearm", "kurtosis_picth_forearm", "kurtosis_yaw_forearm",
+"skewness_roll_forearm", "skewness_pitch_forearm", "skewness_yaw_forearm", "max_roll_forearm",
+"max_yaw_forearm", "min_roll_forearm", "min_yaw_forearm", "amplitude_roll_forearm",
+"amplitude_yaw_forearm", "avg_roll_forearm", "stddev_roll_forearm", "var_roll_forearm",
+"avg_pitch_forearm", "stddev_pitch_forearm", "var_pitch_forearm", "avg_yaw_forearm",
+"stddev_yaw_forearm", "var_yaw_forearm")
+
+training <- training[!NZVvars]
+dim(training)
+#[1] 11776   100
+#60 variables reduced
+```
+
+Delete first column of Dataset - ID, so that it does not interfere with ML Algorithms:
+
+```{r}
+training <- training[c(-1)]
+```
+
+Cleaning variables with too many NAs (that have more than a 60% threshold of NAs):
+
+```{r}
+temp_training <- training 
+for(i in 1:length(training)) { 
+        if( sum( is.na( training[, i] ) ) /nrow(training) >= .6 ) { 
+  	for(j in 1:length(temp_training)) {
+			if( length( grep(names(training[i]), names(temp_training)[j]) ) ==1)  {
+				temp_training <- temp_training[ , -j] 
+			}	
+		} 
+	}
+}
+dim(temp_training)
+training <- temp_training
+rm(temp_training)
+```
+
+Complete same transformation for our original_testing and testing data sets.
+
+```{r}
+clean1 <- colnames(training)
+clean2 <- colnames(training[, -58])
+testing <- testing[clean1]
+original_testing <- original_testing[clean2]
+dim(testing); dim(original_testing)
+```
+
+In order to ensure proper functioning of Decision Trees and especially Random Forest Algorithm with the Test data set (data set provided), we need to coerce the data into the same type.
+
+```{r}
+for (i in 1:length(original_testing) ) {
+        for(j in 1:length(training)) {
+  	if( length( grep(names(training[i]), names(original_testing)[j]) ) ==1)  {
+			class(original_testing[j]) <- class(training[i])
+		}      
+	}      
+}
+
+original_testing <- rbind(training[2, -58] , original_testing) #note row 2 does not mean anything, will be removed 
+original_testing <- original_testing[-1,]
+
+```
+
+## Using ML algorithms for prediction: Decision Tree
+
+```{r}
+modFitA1 <- rpart(classe ~ ., data=training, method="class")
+```
+
+Note: to view the decision tree with fancy run this command:
+
+```{r}
+fancyRpartPlot(modFitA1)
+```
+
+Predicting:
+
+```{r}
+predictionsA1 <- predict(modFitA1, testing, type = "class")
+```
+
+Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsA1, testing$classe)
+#Overall Statistics
+                                          
+#               Accuracy : 0.8683          
+#                 95% CI : (0.8607, 0.8757)
+#    No Information Rate : 0.2845          
+#    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+#                  Kappa : 0.8335 
+```
+
+## Using ML algorithms for prediction: Random Forests
+
+```{r}
+modFitB1 <- randomForest(classe ~. , data=training)
+```
+
+Predicting:
+```{r}
+predictionsB1 <- predict(modFitB1, testing, type = "class")
+```
+Using confusion Matrix to test results:
+```{r}
+confusionMatrix(predictionsB1, testing$classe)
+#Overall Statistics
+                                         
+ #              Accuracy : 0.999          
+ #                95% CI : (0.998, 0.9996)
+ #   No Information Rate : 0.2845         
+ #   P-Value [Acc > NIR] : < 2.2e-16      
+                                         
+ #                 Kappa : 0.9987         
+ #Mcnemar's Test P-Value : NA 
+
+
+```
+Random Forests has better results, as expected!
+
+## Generating Files to submit as answers for the Assignment:
+
+Finally, using the provided Test Set: for Random Forests is, which has a much better prediction:
+
+```{r}
+predictionsB2 <- predict(modFitB1, original_testing, type = "class")
+```
+
+Function to generate files with predictions to submit for assignment
+```{r}
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictionsB2)
+```
